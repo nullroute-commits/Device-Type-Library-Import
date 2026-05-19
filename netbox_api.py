@@ -68,7 +68,11 @@ class ImportFilters:
         if not normalized:
             return
 
-        parts = [part.strip() for part in normalized.split(":") if part.strip()]
+        parts = []
+        for part in normalized.split(":"):
+            stripped_part = part.strip()
+            if stripped_part:
+                parts.append(stripped_part)
         if not parts:
             return
 
@@ -105,17 +109,15 @@ class ImportFilters:
             return ()
 
         if isinstance(manufacturer, dict):
-            return tuple(
-                normalized
-                for value in (manufacturer.get("slug"), manufacturer.get("name"))
-                if (normalized := cls.normalize_identifier(value))
-            )
+            manufacturer_values = []
+            for value in (manufacturer.get("slug"), manufacturer.get("name")):
+                normalized_value = cls.normalize_identifier(value)
+                if normalized_value:
+                    manufacturer_values.append(normalized_value)
+            return tuple(manufacturer_values)
 
-        return tuple(
-            normalized
-            for normalized in (cls.normalize_identifier(manufacturer),)
-            if normalized
-        )
+        normalized_manufacturer = cls.normalize_identifier(manufacturer)
+        return (normalized_manufacturer,) if normalized_manufacturer else ()
 
     def is_object_excluded(self, object_type, *identifiers, manufacturer=None):
         typed_identifiers = self.excluded_objects_by_type.get(self.canonical_object_type(object_type), set())
