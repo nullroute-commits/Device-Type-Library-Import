@@ -58,7 +58,8 @@ MANDATORY_ENV_VARS = {
 }
 
 
-def validate_environment(exception_handler=handle):
+def validate_environment(exception_handler=None):
+    exception_handler = exception_handler or handle
     for var_name, value in MANDATORY_ENV_VARS.items():
         if not value:
             exception_handler.exception(
@@ -68,5 +69,6 @@ def validate_environment(exception_handler=handle):
             )
 
 
-def create_repo(exception_handler=handle, cli_args=None, repo_path=None):
+def create_repo(exception_handler=None, cli_args=None, repo_path=None):
+    exception_handler = exception_handler or handle
     return DTLRepo(cli_args or args, repo_path or REPO_PATH, exception_handler)

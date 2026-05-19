@@ -36,7 +36,10 @@ class DTLRepo:
         return os.path.join(self.get_absolute_path(), 'module-types')
 
     def slug_format(self, name):
-        return re_sub(r'-+', '-', re_sub(r'\W+', '-', name.lower()).strip('-'))
+        lower_name = name.lower()
+        hyphenated_name = re_sub(r'\W+', '-', lower_name)
+        normalized_name = re_sub(r'-+', '-', hyphenated_name)
+        return normalized_name.strip('-')
 
     def pull_repo(self):
         try:

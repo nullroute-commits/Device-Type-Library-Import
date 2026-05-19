@@ -221,6 +221,7 @@ class DeviceTypes:
 
     @staticmethod
     def get_device_type_key(manufacturer_slug, model):
+        """Build a case-insensitive uniqueness key for device types."""
         return (manufacturer_slug.casefold(), model.casefold())
 
     def get_device_types(self):
