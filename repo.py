@@ -36,7 +36,7 @@ class DTLRepo:
         return os.path.join(self.get_absolute_path(), 'module-types')
 
     def slug_format(self, name):
-        return re_sub(r'\W+', '-', name.lower()).strip('-')
+        return re_sub(r'-+', '-', re_sub(r'\W+', '-', name.lower()).strip('-'))
 
     def pull_repo(self):
         try:

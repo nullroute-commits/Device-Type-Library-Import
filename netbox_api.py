@@ -50,14 +50,16 @@ class NetBox:
     def verify_compatibility(self):
         # nb.version should be the version in the form '3.2'
         version_split = [int(x) for x in self.netbox.version.split('.')]
+        version_major = version_split[0] if version_split else 0
+        version_minor = version_split[1] if len(version_split) > 1 else 0
 
         # Later than 3.2
         # Might want to check for the module-types entry as well?
-        if version_split[0] > 3 or (version_split[0] == 3 and version_split[1] >= 2):
+        if version_major > 3 or (version_major == 3 and version_minor >= 2):
             self.modules = True
 
         # check if version >= 4.1 in order to use new filter names (https://github.com/netbox-community/netbox/issues/15410)
-        if version_split[0] > 4 or (version_split[0] == 4 and version_split[1] >= 1):
+        if version_major > 4 or (version_major == 4 and version_minor >= 1):
             self.new_filters = True
             self.handle.log(f'Netbox version {self.netbox.version} found. Using new filters.')
     
@@ -219,7 +221,7 @@ class DeviceTypes:
 
     @staticmethod
     def get_device_type_key(manufacturer_slug, model):
-        return f'{manufacturer_slug.casefold()}::{model.casefold()}'
+        return (manufacturer_slug.casefold(), model.casefold())
 
     def get_device_types(self):
         return {
