@@ -23,6 +23,8 @@ VENDORS = list(filter(None, os.getenv("VENDORS", "").split(",")))
 
 # optionally load device types through a space separated list as env var
 SLUGS = os.getenv("SLUGS", "").split()
+EXCLUDE_OBJECT_TYPES = os.getenv("EXCLUDE_OBJECT_TYPES", "").split()
+EXCLUDE_OBJECTS = os.getenv("EXCLUDE_OBJECTS", "").split()
 
 parser = ArgumentParser(description='Import Netbox Device Types')
 parser.add_argument('--vendors', nargs='+', default=VENDORS,
@@ -31,6 +33,10 @@ parser.add_argument('--url', '--git', default=REPO_URL,
                     help="Git URL with valid Device Type YAML files")
 parser.add_argument('--slugs', nargs='+', default=SLUGS,
                     help="List of device-type slugs to import eg. ap4431 ws-c3850-24t-l")
+parser.add_argument('--exclude-object-types', nargs='+', default=EXCLUDE_OBJECT_TYPES,
+                    help="List of object types to skip eg. interfaces module-types")
+parser.add_argument('--exclude-objects', nargs='+', default=EXCLUDE_OBJECTS,
+                    help="List of object names/models/slugs to skip eg. mgmt0 ex4300")
 parser.add_argument('--branch', default=REPO_BRANCH,
                     help="Git branch to use from repo")
 parser.add_argument('--verbose', action='store_true', default=False,
@@ -48,6 +54,18 @@ args.slugs = [
     value
     for slug in args.slugs
     for value in slug.split(",")
+    if value.strip()
+]
+args.exclude_object_types = [
+    value.strip()
+    for object_type in args.exclude_object_types
+    for value in object_type.split(",")
+    if value.strip()
+]
+args.exclude_objects = [
+    value.strip()
+    for object_name in args.exclude_objects
+    for value in object_name.split(",")
     if value.strip()
 ]
 
