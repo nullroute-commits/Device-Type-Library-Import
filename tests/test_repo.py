@@ -57,6 +57,35 @@ class RepoParseFilesTests(unittest.TestCase):
 
             self.assertEqual([item["model"] for item in parsed], ["Smart-UPS"])
 
+    def test_parse_files_matches_multiple_mixed_case_slug_filters(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            base = Path(tmpdir)
+            first = base / "first.yaml"
+            first.write_text(
+                "manufacturer: APC\nmodel: Smart-UPS\nslug: smart-ups-x\n",
+                encoding="utf-8",
+            )
+            second = base / "second.yaml"
+            second.write_text(
+                "manufacturer: Juniper\nmodel: EX4300\nslug: ex4300-48p\n",
+                encoding="utf-8",
+            )
+            third = base / "third.yaml"
+            third.write_text(
+                "manufacturer: Cisco\nmodel: ISR\nslug: isr-4431\n",
+                encoding="utf-8",
+            )
+
+            parsed = self.repo.parse_files(
+                [str(first), str(second), str(third)],
+                slugs=["SMART-ups", "Ex4300"],
+            )
+
+            self.assertEqual(
+                [item["model"] for item in parsed],
+                ["Smart-UPS", "EX4300"],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

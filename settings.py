@@ -68,5 +68,5 @@ def validate_environment(exception_handler=handle):
             )
 
 
-def create_repo(exception_handler=handle):
-    return DTLRepo(args, REPO_PATH, exception_handler)
+def create_repo(exception_handler=handle, cli_args=None, repo_path=None):
+    return DTLRepo(cli_args or args, repo_path or REPO_PATH, exception_handler)

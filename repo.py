@@ -42,7 +42,7 @@ class DTLRepo:
         try:
             self.handle.log("Package devicetype-library is already installed, "
                             + f"updating {self.get_absolute_path()}")
-            self.repo = Repo(self.get_absolute_path())
+            self.repo = Repo(self.repo_path)
             remote_ref = f'origin/{self.branch}'
             self.repo.remotes.origin.fetch(self.branch)
             try:
