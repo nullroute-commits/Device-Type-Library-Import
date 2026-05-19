@@ -2,7 +2,7 @@ import importlib
 import os
 import sys
 import unittest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -15,7 +15,7 @@ class SettingsTests(unittest.TestCase):
         previous_argv = list(sys.argv)
         try:
             sys.argv = ["settings.py"]
-            with unittest.mock.patch.dict(os.environ, env, clear=True):
+            with patch.dict(os.environ, env, clear=True):
                 sys.modules.pop("settings", None)
                 import settings
                 return importlib.reload(settings)
