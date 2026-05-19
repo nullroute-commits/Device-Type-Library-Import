@@ -211,6 +211,28 @@ class NetBoxBehaviorTests(unittest.TestCase):
         self.assertEqual(len(endpoint.create_calls), 1)
         self.assertEqual([item["name"] for item in endpoint.create_calls[0]], ["xe-0/0/0"])
 
+    def test_create_interfaces_skips_unscoped_excluded_objects(self):
+        handle = FakeHandle()
+        endpoint = FakeEndpoint(create_result=[], filter_records=[])
+        device_types = DeviceTypes.__new__(DeviceTypes)
+        device_types.handle = handle
+        device_types.counter = Counter()
+        device_types.ignore_ssl = False
+        device_types.new_filters = False
+        device_types.import_filters = ImportFilters(handle, excluded_objects=["mgmt0"])
+        device_types.netbox = SimpleNamespace(dcim=SimpleNamespace(interface_templates=endpoint))
+
+        device_types.create_interfaces(
+            [
+                {"name": "mgmt0", "type": "1000base-t"},
+                {"name": "xe-0/0/0", "type": "10gbase-x-sfpp"},
+            ],
+            1,
+        )
+
+        self.assertEqual(len(endpoint.create_calls), 1)
+        self.assertEqual([item["name"] for item in endpoint.create_calls[0]], ["xe-0/0/0"])
+
 
 if __name__ == "__main__":
     unittest.main()

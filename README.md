@@ -70,7 +70,7 @@ To import only device by APC, for example:
 ./nb-dt-import.py --exclude-object-types interfaces,module-types
 ```
 
-`--exclude-objects` skips specific objects by exact name, slug, or model. Prefix an entry with an object type such as `interfaces:mgmt0` or `device-types:ex4300` when you only want that match ignored within one category.
+`--exclude-objects` skips specific objects by exact name, slug, or model. Prefix an entry with an object type such as `interfaces:mgmt0` or `device-types:ex4300` when you only want that match ignored within one category. Module type exclusions also match the source filename stem because module YAML files do not include slugs. Image exclusions only skip the image upload step; the device type is still imported.
 
 ```
 ./nb-dt-import.py --exclude-objects device-types:ex4300,interfaces:mgmt0
@@ -101,7 +101,7 @@ The container supports the following env var as configuration :
 - `VENDORS`, a comma-separated list of vendors to import (defaults to None)
 - `SLUGS`, a space- or comma-separated list of device type slugs to import
 - `EXCLUDE_OBJECT_TYPES`, a space- or comma-separated list of object types to skip
-- `EXCLUDE_OBJECTS`, a space- or comma-separated list of specific objects to skip; supports scoped entries like `interfaces:mgmt0`
+- `EXCLUDE_OBJECTS`, a space- or comma-separated list of specific objects to skip; supports scoped entries like `interfaces:mgmt0`, `device-types:ex4300`, or `images:ex4300`
 - `REQUESTS_CA_BUNDLE`, path to a CA_BUNDLE for validation if you are using self-signed certificates(file must be included in the container)
 
 To run :

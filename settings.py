@@ -57,13 +57,13 @@ args.slugs = [
     if value.strip()
 ]
 args.exclude_object_types = [
-    value
+    value.strip()
     for object_type in args.exclude_object_types
     for value in object_type.split(",")
     if value.strip()
 ]
 args.exclude_objects = [
-    value
+    value.strip()
     for object_name in args.exclude_objects
     for value in object_name.split(",")
     if value.strip()
