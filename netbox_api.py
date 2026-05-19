@@ -208,19 +208,22 @@ class NetBox:
             return
 
         for device_type in device_types_to_add:
+            device_type_slug = device_type.get("slug")
+            device_type_model = device_type.get("model")
             if self.import_filters.is_object_excluded(
                 "device-types",
-                device_type.get("slug"),
-                device_type.get("model"),
+                device_type_slug,
+                device_type_model,
             ):
                 self.handle.verbose_log(
                     f"Skipping device type due to exclusion filter: "
-                    f'{device_type.get("model") or device_type.get("slug")}'
+                    f'{device_type_model or device_type_slug}'
                 )
                 continue
 
             # Remove file base path
-            src_file = device_type.pop("src")
+            src_file = device_type["src"]
+            del device_type["src"]
 
             # Pre-process front/rear_image flag, remove it if present
             saved_images = {}
@@ -287,11 +290,11 @@ class NetBox:
             if saved_images:
                 if self.import_filters.is_object_type_excluded("images") or self.import_filters.is_object_excluded(
                     "images",
-                    device_type.get("slug"),
-                    device_type.get("model"),
+                    device_type_slug,
+                    device_type_model,
                 ):
                     self.handle.verbose_log(
-                        f"Skipping images due to exclusion filter: {device_type.get('model')}"
+                        f"Skipping images due to exclusion filter: {device_type_model}"
                     )
                 else:
                     self.device_types.upload_images(self.url, self.token, saved_images, dt.id)

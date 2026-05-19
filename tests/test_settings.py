@@ -91,6 +91,22 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(settings.args.exclude_object_types, ["interfaces", "module-types"])
         self.assertEqual(settings.args.exclude_objects, ["device-types:EX4300", "mgmt0"])
 
+    def test_exclusion_filters_accept_space_separated_env_values(self):
+        settings = self.load_settings(
+            {
+                "NETBOX_URL": "https://netbox.example",
+                "NETBOX_TOKEN": "token",
+                "EXCLUDE_OBJECT_TYPES": "interfaces module-types images",
+                "EXCLUDE_OBJECTS": "device-types:EX4300 mgmt0",
+            }
+        )
+
+        self.assertEqual(
+            settings.args.exclude_object_types,
+            ["interfaces", "module-types", "images"],
+        )
+        self.assertEqual(settings.args.exclude_objects, ["device-types:EX4300", "mgmt0"])
+
 
 if __name__ == "__main__":
     unittest.main()
