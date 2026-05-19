@@ -46,6 +46,8 @@ class ImportFilters:
         }
         self.excluded_objects = set()
         self.excluded_objects_by_type = {}
+        self.excluded_objects_by_manufacturer = {}
+        self.excluded_objects_by_type_and_manufacturer = {}
 
         for excluded_object in excluded_objects or []:
             self.add_excluded_object(excluded_object)
@@ -66,27 +68,84 @@ class ImportFilters:
         if not normalized:
             return
 
-        object_type, separator, identifier = normalized.partition(":")
-        if separator and identifier:
-            canonical_object_type = self.canonical_object_type(object_type)
-            if canonical_object_type:
-                self.excluded_objects_by_type.setdefault(canonical_object_type, set()).add(identifier.strip())
+        parts = [part.strip() for part in normalized.split(":") if part.strip()]
+        if not parts:
+            return
+
+        if len(parts) >= 3:
+            canonical_object_type = self.canonical_object_type(parts[0])
+            if canonical_object_type in self.OBJECT_TYPE_ALIASES.values():
+                manufacturer = parts[1]
+                identifier = ":".join(parts[2:])
+                self.excluded_objects_by_type_and_manufacturer.setdefault(
+                    canonical_object_type,
+                    {},
+                ).setdefault(manufacturer, set()).add(identifier)
                 return
+
+        if len(parts) >= 2:
+            canonical_object_type = self.canonical_object_type(parts[0])
+            identifier = ":".join(parts[1:])
+            if canonical_object_type in self.OBJECT_TYPE_ALIASES.values():
+                self.excluded_objects_by_type.setdefault(canonical_object_type, set()).add(identifier)
+                return
+
+            manufacturer = parts[0]
+            self.excluded_objects_by_manufacturer.setdefault(manufacturer, set()).add(identifier)
+            return
 
         self.excluded_objects.add(normalized)
 
     def is_object_type_excluded(self, object_type):
         return self.canonical_object_type(object_type) in self.excluded_object_types
 
-    def is_object_excluded(self, object_type, *identifiers):
+    @classmethod
+    def manufacturer_identifiers(cls, manufacturer):
+        if not manufacturer:
+            return ()
+
+        if isinstance(manufacturer, dict):
+            return tuple(
+                normalized
+                for value in (manufacturer.get("slug"), manufacturer.get("name"))
+                if (normalized := cls.normalize_identifier(value))
+            )
+
+        return tuple(
+            normalized
+            for normalized in (cls.normalize_identifier(manufacturer),)
+            if normalized
+        )
+
+    def is_object_excluded(self, object_type, *identifiers, manufacturer=None):
         typed_identifiers = self.excluded_objects_by_type.get(self.canonical_object_type(object_type), set())
+        manufacturer_identifiers = self.manufacturer_identifiers(manufacturer)
+        manufacturer_scoped_identifiers = set()
+        typed_manufacturer_scoped_identifiers = set()
+
+        for manufacturer_identifier in manufacturer_identifiers:
+            manufacturer_scoped_identifiers.update(
+                self.excluded_objects_by_manufacturer.get(manufacturer_identifier, set())
+            )
+            typed_manufacturer_scoped_identifiers.update(
+                self.excluded_objects_by_type_and_manufacturer.get(
+                    self.canonical_object_type(object_type),
+                    {},
+                ).get(manufacturer_identifier, set())
+            )
+
         for identifier in identifiers:
             normalized = self.normalize_identifier(identifier)
-            if normalized and (normalized in self.excluded_objects or normalized in typed_identifiers):
+            if normalized and (
+                normalized in self.excluded_objects
+                or normalized in typed_identifiers
+                or normalized in manufacturer_scoped_identifiers
+                or normalized in typed_manufacturer_scoped_identifiers
+            ):
                 return True
         return False
 
-    def filter_objects(self, object_type, objects):
+    def filter_objects(self, object_type, objects, manufacturer=None):
         if self.is_object_type_excluded(object_type):
             self.handle.verbose_log(f"Skipping object type due to exclusion filter: {object_type}")
             return []
@@ -99,7 +158,7 @@ class ImportFilters:
                 object_definition.get("slug"),
                 object_definition.get("model"),
             )
-            if self.is_object_excluded(object_type, *identifiers):
+            if self.is_object_excluded(object_type, *identifiers, manufacturer=manufacturer):
                 object_name = next((identifier for identifier in identifiers if identifier), object_definition)
                 self.handle.verbose_log(
                     f"Skipping {object_type} object due to exclusion filter: {object_name}"
@@ -210,10 +269,12 @@ class NetBox:
         for device_type in device_types_to_add:
             device_type_slug = device_type.get("slug")
             device_type_model = device_type.get("model")
+            device_type_manufacturer = device_type.get("manufacturer")
             if self.import_filters.is_object_excluded(
                 "device-types",
                 device_type_slug,
                 device_type_model,
+                manufacturer=device_type_manufacturer,
             ):
                 self.handle.verbose_log(
                     f"Skipping device type due to exclusion filter: "
@@ -266,25 +327,65 @@ class NetBox:
                     continue
 
             if "interfaces" in device_type:
-                self.device_types.create_interfaces(device_type["interfaces"], dt.id)
+                self.device_types.create_interfaces(
+                    device_type["interfaces"],
+                    dt.id,
+                    manufacturer=device_type_manufacturer,
+                )
             if "power-ports" in device_type:
-                self.device_types.create_power_ports(device_type["power-ports"], dt.id)
+                self.device_types.create_power_ports(
+                    device_type["power-ports"],
+                    dt.id,
+                    manufacturer=device_type_manufacturer,
+                )
             if "power-port" in device_type:
-                self.device_types.create_power_ports(device_type["power-port"], dt.id)
+                self.device_types.create_power_ports(
+                    device_type["power-port"],
+                    dt.id,
+                    manufacturer=device_type_manufacturer,
+                )
             if "console-ports" in device_type:
-                self.device_types.create_console_ports(device_type["console-ports"], dt.id)
+                self.device_types.create_console_ports(
+                    device_type["console-ports"],
+                    dt.id,
+                    manufacturer=device_type_manufacturer,
+                )
             if "power-outlets" in device_type:
-                self.device_types.create_power_outlets(device_type["power-outlets"], dt.id)
+                self.device_types.create_power_outlets(
+                    device_type["power-outlets"],
+                    dt.id,
+                    manufacturer=device_type_manufacturer,
+                )
             if "console-server-ports" in device_type:
-                self.device_types.create_console_server_ports(device_type["console-server-ports"], dt.id)
+                self.device_types.create_console_server_ports(
+                    device_type["console-server-ports"],
+                    dt.id,
+                    manufacturer=device_type_manufacturer,
+                )
             if "rear-ports" in device_type:
-                self.device_types.create_rear_ports(device_type["rear-ports"], dt.id)
+                self.device_types.create_rear_ports(
+                    device_type["rear-ports"],
+                    dt.id,
+                    manufacturer=device_type_manufacturer,
+                )
             if "front-ports" in device_type:
-                self.device_types.create_front_ports(device_type["front-ports"], dt.id)
+                self.device_types.create_front_ports(
+                    device_type["front-ports"],
+                    dt.id,
+                    manufacturer=device_type_manufacturer,
+                )
             if "device-bays" in device_type:
-                self.device_types.create_device_bays(device_type["device-bays"], dt.id)
+                self.device_types.create_device_bays(
+                    device_type["device-bays"],
+                    dt.id,
+                    manufacturer=device_type_manufacturer,
+                )
             if self.modules and 'module-bays' in device_type:
-                self.device_types.create_module_bays(device_type['module-bays'], dt.id)
+                self.device_types.create_module_bays(
+                    device_type['module-bays'],
+                    dt.id,
+                    manufacturer=device_type_manufacturer,
+                )
 
             # Finally, update images if any
             if saved_images:
@@ -292,6 +393,7 @@ class NetBox:
                     "images",
                     device_type_slug,
                     device_type_model,
+                    manufacturer=device_type_manufacturer,
                 ):
                     self.handle.verbose_log(
                         f"Skipping images due to exclusion filter: {device_type_model}"
@@ -315,11 +417,13 @@ class NetBox:
         for curr_mt in module_types:
             src_file = curr_mt.pop("src", None)
             src_name = os.path.splitext(os.path.basename(src_file))[0] if src_file else None
+            module_type_manufacturer = curr_mt.get("manufacturer")
             if self.import_filters.is_object_excluded(
                 "module-types",
                 curr_mt.get("slug"),
                 curr_mt.get("model"),
                 src_name,
+                manufacturer=module_type_manufacturer,
             ):
                 self.handle.verbose_log(
                     f"Skipping module type due to exclusion filter: "
@@ -348,19 +452,47 @@ class NetBox:
                 curr_mt["src"] = src_file
 
             if "interfaces" in curr_mt:
-                self.device_types.create_module_interfaces(curr_mt["interfaces"], module_type_res.id)
+                self.device_types.create_module_interfaces(
+                    curr_mt["interfaces"],
+                    module_type_res.id,
+                    manufacturer=module_type_manufacturer,
+                )
             if "power-ports" in curr_mt:
-                self.device_types.create_module_power_ports(curr_mt["power-ports"], module_type_res.id)
+                self.device_types.create_module_power_ports(
+                    curr_mt["power-ports"],
+                    module_type_res.id,
+                    manufacturer=module_type_manufacturer,
+                )
             if "console-ports" in curr_mt:
-                self.device_types.create_module_console_ports(curr_mt["console-ports"], module_type_res.id)
+                self.device_types.create_module_console_ports(
+                    curr_mt["console-ports"],
+                    module_type_res.id,
+                    manufacturer=module_type_manufacturer,
+                )
             if "power-outlets" in curr_mt:
-                self.device_types.create_module_power_outlets(curr_mt["power-outlets"], module_type_res.id)
+                self.device_types.create_module_power_outlets(
+                    curr_mt["power-outlets"],
+                    module_type_res.id,
+                    manufacturer=module_type_manufacturer,
+                )
             if "console-server-ports" in curr_mt:
-                self.device_types.create_module_console_server_ports(curr_mt["console-server-ports"], module_type_res.id)
+                self.device_types.create_module_console_server_ports(
+                    curr_mt["console-server-ports"],
+                    module_type_res.id,
+                    manufacturer=module_type_manufacturer,
+                )
             if "rear-ports" in curr_mt:
-                self.device_types.create_module_rear_ports(curr_mt["rear-ports"], module_type_res.id)
+                self.device_types.create_module_rear_ports(
+                    curr_mt["rear-ports"],
+                    module_type_res.id,
+                    manufacturer=module_type_manufacturer,
+                )
             if "front-ports" in curr_mt:
-                self.device_types.create_module_front_ports(curr_mt["front-ports"], module_type_res.id)
+                self.device_types.create_module_front_ports(
+                    curr_mt["front-ports"],
+                    module_type_res.id,
+                    manufacturer=module_type_manufacturer,
+                )
 
 class DeviceTypes:
     def __new__(cls, *args, **kwargs):
@@ -412,11 +544,11 @@ class DeviceTypes:
 
         return to_create
 
-    def filter_objects(self, object_type, objects):
-        return self.import_filters.filter_objects(object_type, objects)
+    def filter_objects(self, object_type, objects, manufacturer=None):
+        return self.import_filters.filter_objects(object_type, objects, manufacturer=manufacturer)
 
-    def create_interfaces(self, interfaces, device_type):
-        interfaces = self.filter_objects("interfaces", interfaces)
+    def create_interfaces(self, interfaces, device_type, manufacturer=None):
+        interfaces = self.filter_objects("interfaces", interfaces, manufacturer=manufacturer)
         if not interfaces:
             return
         existing_interfaces = {str(item): item for item in self.netbox.dcim.interface_templates.filter(
@@ -433,8 +565,8 @@ class DeviceTypes:
             except pynetbox.RequestError as excep:
                 self.handle.log(f"Error '{excep.error}' creating Interface")
 
-    def create_power_ports(self, power_ports, device_type):
-        power_ports = self.filter_objects("power-ports", power_ports)
+    def create_power_ports(self, power_ports, device_type, manufacturer=None):
+        power_ports = self.filter_objects("power-ports", power_ports, manufacturer=manufacturer)
         if not power_ports:
             return
         existing_power_ports = self.get_power_ports(device_type)
@@ -449,8 +581,8 @@ class DeviceTypes:
             except pynetbox.RequestError as excep:
                 self.handle.log(f"Error '{excep.error}' creating Power Port")
 
-    def create_console_ports(self, console_ports, device_type):
-        console_ports = self.filter_objects("console-ports", console_ports)
+    def create_console_ports(self, console_ports, device_type, manufacturer=None):
+        console_ports = self.filter_objects("console-ports", console_ports, manufacturer=manufacturer)
         if not console_ports:
             return
         existing_console_ports = {str(item): item for item in self.netbox.dcim.console_port_templates.filter(**{'device_type_id' if self.new_filters else 'devicetype_id': device_type})}
@@ -465,8 +597,8 @@ class DeviceTypes:
             except pynetbox.RequestError as excep:
                 self.handle.log(f"Error '{excep.error}' creating Console Port")
 
-    def create_power_outlets(self, power_outlets, device_type):
-        power_outlets = self.filter_objects("power-outlets", power_outlets)
+    def create_power_outlets(self, power_outlets, device_type, manufacturer=None):
+        power_outlets = self.filter_objects("power-outlets", power_outlets, manufacturer=manufacturer)
         if not power_outlets:
             return
         existing_power_outlets = {str(item): item for item in self.netbox.dcim.power_outlet_templates.filter(**{'device_type_id' if self.new_filters else 'devicetype_id': device_type})}
@@ -489,8 +621,8 @@ class DeviceTypes:
             except pynetbox.RequestError as excep:
                 self.handle.log(f"Error '{excep.error}' creating Power Outlet")
 
-    def create_console_server_ports(self, console_server_ports, device_type):
-        console_server_ports = self.filter_objects("console-server-ports", console_server_ports)
+    def create_console_server_ports(self, console_server_ports, device_type, manufacturer=None):
+        console_server_ports = self.filter_objects("console-server-ports", console_server_ports, manufacturer=manufacturer)
         if not console_server_ports:
             return
         existing_console_server_ports = {str(item): item for item in self.netbox.dcim.console_server_port_templates.filter(**{'device_type_id' if self.new_filters else 'devicetype_id': device_type})}
@@ -505,8 +637,8 @@ class DeviceTypes:
             except pynetbox.RequestError as excep:
                 self.handle.log(f"Error '{excep.error}' creating Console Server Port")
 
-    def create_rear_ports(self, rear_ports, device_type):
-        rear_ports = self.filter_objects("rear-ports", rear_ports)
+    def create_rear_ports(self, rear_ports, device_type, manufacturer=None):
+        rear_ports = self.filter_objects("rear-ports", rear_ports, manufacturer=manufacturer)
         if not rear_ports:
             return
         existing_rear_ports = self.get_rear_ports(device_type)
@@ -521,8 +653,8 @@ class DeviceTypes:
             except pynetbox.RequestError as excep:
                 self.handle.log(f"Error '{excep.error}' creating Rear Port")
 
-    def create_front_ports(self, front_ports, device_type):
-        front_ports = self.filter_objects("front-ports", front_ports)
+    def create_front_ports(self, front_ports, device_type, manufacturer=None):
+        front_ports = self.filter_objects("front-ports", front_ports, manufacturer=manufacturer)
         if not front_ports:
             return
         existing_front_ports = {str(item): item for item in self.netbox.dcim.front_port_templates.filter(**{'device_type_id' if self.new_filters else 'devicetype_id': device_type})}
@@ -546,8 +678,8 @@ class DeviceTypes:
             except pynetbox.RequestError as excep:
                 self.handle.log(f"Error '{excep.error}' creating Front Port")
 
-    def create_device_bays(self, device_bays, device_type):
-        device_bays = self.filter_objects("device-bays", device_bays)
+    def create_device_bays(self, device_bays, device_type, manufacturer=None):
+        device_bays = self.filter_objects("device-bays", device_bays, manufacturer=manufacturer)
         if not device_bays:
             return
         existing_device_bays = {str(item): item for item in self.netbox.dcim.device_bay_templates.filter(**{'device_type_id' if self.new_filters else 'devicetype_id': device_type})}
@@ -562,8 +694,8 @@ class DeviceTypes:
             except pynetbox.RequestError as excep:
                 self.handle.log(f"Error '{excep.error}' creating Device Bay")
 
-    def create_module_bays(self, module_bays, device_type):
-        module_bays = self.filter_objects("module-bays", module_bays)
+    def create_module_bays(self, module_bays, device_type, manufacturer=None):
+        module_bays = self.filter_objects("module-bays", module_bays, manufacturer=manufacturer)
         if not module_bays:
             return
         existing_module_bays = {str(item): item for item in self.netbox.dcim.module_bay_templates.filter(**{'device_type_id' if self.new_filters else 'devicetype_id': device_type})}
@@ -578,8 +710,8 @@ class DeviceTypes:
             except pynetbox.RequestError as excep:
                 self.handle.log(f"Error '{excep.error}' creating Module Bay")
 
-    def create_module_interfaces(self, module_interfaces, module_type):
-        module_interfaces = self.filter_objects("interfaces", module_interfaces)
+    def create_module_interfaces(self, module_interfaces, module_type, manufacturer=None):
+        module_interfaces = self.filter_objects("interfaces", module_interfaces, manufacturer=manufacturer)
         if not module_interfaces:
             return
         existing_interfaces = {str(item): item for item in self.netbox.dcim.interface_templates.filter(**{'module_type_id' if self.new_filters else 'moduletype_id': module_type})}
@@ -594,8 +726,8 @@ class DeviceTypes:
             except pynetbox.RequestError as excep:
                 self.handle.log(f"Error '{excep.error}' creating Module Interface")
 
-    def create_module_power_ports(self, power_ports, module_type):
-        power_ports = self.filter_objects("power-ports", power_ports)
+    def create_module_power_ports(self, power_ports, module_type, manufacturer=None):
+        power_ports = self.filter_objects("power-ports", power_ports, manufacturer=manufacturer)
         if not power_ports:
             return
         existing_power_ports = self.get_module_power_ports(module_type)
@@ -610,8 +742,8 @@ class DeviceTypes:
             except pynetbox.RequestError as excep:
                 self.handle.log(f"Error '{excep.error}' creating Module Power Port")
 
-    def create_module_console_ports(self, console_ports, module_type):
-        console_ports = self.filter_objects("console-ports", console_ports)
+    def create_module_console_ports(self, console_ports, module_type, manufacturer=None):
+        console_ports = self.filter_objects("console-ports", console_ports, manufacturer=manufacturer)
         if not console_ports:
             return
         existing_console_ports = {str(item): item for item in self.netbox.dcim.console_port_templates.filter(**{'module_type_id' if self.new_filters else 'moduletype_id': module_type})}
@@ -626,8 +758,8 @@ class DeviceTypes:
             except pynetbox.RequestError as excep:
                 self.handle.log(f"Error '{excep.error}' creating Module Console Port")
 
-    def create_module_power_outlets(self, power_outlets, module_type):
-        power_outlets = self.filter_objects("power-outlets", power_outlets)
+    def create_module_power_outlets(self, power_outlets, module_type, manufacturer=None):
+        power_outlets = self.filter_objects("power-outlets", power_outlets, manufacturer=manufacturer)
         if not power_outlets:
             return
         existing_power_outlets = {str(item): item for item in self.netbox.dcim.power_outlet_templates.filter(**{'module_type_id' if self.new_filters else 'moduletype_id': module_type})}
@@ -650,8 +782,8 @@ class DeviceTypes:
             except pynetbox.RequestError as excep:
                 self.handle.log(f"Error '{excep.error}' creating Module Power Outlet")
 
-    def create_module_console_server_ports(self, console_server_ports, module_type):
-        console_server_ports = self.filter_objects("console-server-ports", console_server_ports)
+    def create_module_console_server_ports(self, console_server_ports, module_type, manufacturer=None):
+        console_server_ports = self.filter_objects("console-server-ports", console_server_ports, manufacturer=manufacturer)
         if not console_server_ports:
             return
         existing_console_server_ports = {str(item): item for item in self.netbox.dcim.console_server_port_templates.filter(**{'module_type_id' if self.new_filters else 'moduletype_id': module_type})}
@@ -666,8 +798,8 @@ class DeviceTypes:
             except pynetbox.RequestError as excep:
                 self.handle.log(f"Error '{excep.error}' creating Module Console Server Port")
 
-    def create_module_rear_ports(self, rear_ports, module_type):
-        rear_ports = self.filter_objects("rear-ports", rear_ports)
+    def create_module_rear_ports(self, rear_ports, module_type, manufacturer=None):
+        rear_ports = self.filter_objects("rear-ports", rear_ports, manufacturer=manufacturer)
         if not rear_ports:
             return
         existing_rear_ports = self.get_module_rear_ports(module_type)
@@ -682,8 +814,8 @@ class DeviceTypes:
             except pynetbox.RequestError as excep:
                 self.handle.log(f"Error '{excep.error}' creating Module Rear Port")
 
-    def create_module_front_ports(self, front_ports, module_type):
-        front_ports = self.filter_objects("front-ports", front_ports)
+    def create_module_front_ports(self, front_ports, module_type, manufacturer=None):
+        front_ports = self.filter_objects("front-ports", front_ports, manufacturer=manufacturer)
         if not front_ports:
             return
         existing_front_ports = {str(item): item for item in self.netbox.dcim.front_port_templates.filter(**{'module_type_id' if self.new_filters else 'moduletype_id': module_type})}
