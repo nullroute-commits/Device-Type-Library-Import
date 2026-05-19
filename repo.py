@@ -36,18 +36,20 @@ class DTLRepo:
         return os.path.join(self.get_absolute_path(), 'module-types')
 
     def slug_format(self, name):
-        return re_sub('\W+', '-', name.lower())
+        return re_sub(r'\W+', '-', name.lower()).strip('-')
 
     def pull_repo(self):
         try:
             self.handle.log("Package devicetype-library is already installed, "
                             + f"updating {self.get_absolute_path()}")
-            self.repo = Repo(self.repo_path)
-            if not self.repo.remotes.origin.url.endswith('.git'):
-                self.handle.exception("GitInvalidRepositoryError", self.repo.remotes.origin.url,
-                                      f"Origin URL {self.repo.remotes.origin.url} does not end with .git")
-            self.repo.remotes.origin.pull()
-            self.repo.git.checkout(self.branch)
+            self.repo = Repo(self.get_absolute_path())
+            remote_ref = f'origin/{self.branch}'
+            self.repo.remotes.origin.fetch(self.branch)
+            try:
+                self.repo.git.checkout(self.branch)
+            except exc.GitCommandError:
+                self.repo.git.checkout('-B', self.branch, remote_ref)
+            self.repo.remotes.origin.pull(self.branch)
             self.handle.verbose_log(
                 f"Pulled Repo {self.repo.remotes.origin.url}")
         except exc.GitCommandError as git_error:
@@ -72,14 +74,15 @@ class DTLRepo:
     def get_devices(self, base_path, vendors: list = None):
         files = []
         discovered_vendors = []
-        vendor_dirs = os.listdir(base_path)
+        vendor_dirs = sorted(os.listdir(base_path))
 
         for folder in [vendor for vendor in vendor_dirs if not vendors or vendor.casefold() in vendors]:
-            if folder.casefold() != "testing":
+            folder_path = os.path.join(base_path, folder)
+            if folder.casefold() != "testing" and os.path.isdir(folder_path):
                 discovered_vendors.append({'name': folder,
                                            'slug': self.slug_format(folder)})
                 for extension in self.yaml_extensions:
-                    files.extend(glob(base_path + folder + f'/*.{extension}'))
+                    files.extend(glob(os.path.join(folder_path, f'*.{extension}')))
         return files, discovered_vendors
 
     def parse_files(self, files: list, slugs: list = None):
@@ -90,6 +93,14 @@ class DTLRepo:
                     data = yaml.safe_load(stream)
                 except yaml.YAMLError as excep:
                     self.handle.verbose_log(excep)
+                    continue
+                if not isinstance(data, dict):
+                    self.handle.verbose_log(f"Skipping invalid YAML document: {file}")
+                    continue
+                missing_fields = [field for field in ['manufacturer', 'model', 'slug'] if field not in data]
+                if missing_fields:
+                    self.handle.verbose_log(
+                        f"Skipping {file}; missing required fields: {', '.join(missing_fields)}")
                     continue
                 manufacturer = data['manufacturer']
                 data['manufacturer'] = {

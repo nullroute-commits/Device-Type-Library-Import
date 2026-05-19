@@ -1,4 +1,5 @@
 from collections import Counter
+from contextlib import ExitStack
 import pynetbox
 import requests
 import os
@@ -56,7 +57,7 @@ class NetBox:
             self.modules = True
 
         # check if version >= 4.1 in order to use new filter names (https://github.com/netbox-community/netbox/issues/15410)
-        if version_split[0] >= 4 and version_split[1] >= 1:
+        if version_split[0] > 4 or (version_split[0] == 4 and version_split[1] >= 1):
             self.new_filters = True
             self.handle.log(f'Netbox version {self.netbox.version} found. Using new filters.')
     
@@ -107,12 +108,23 @@ class NetBox:
                     del device_type[i]
 
             try:
-                dt = self.device_types.existing_device_types[device_type["model"]]
+                dt = self.device_types.existing_device_types[
+                    self.device_types.get_device_type_key(
+                        device_type["manufacturer"]["slug"],
+                        device_type["model"],
+                    )
+                ]
                 self.handle.verbose_log(f'Device Type Exists: {dt.manufacturer.name} - '
                     + f'{dt.model} - {dt.id}')
             except KeyError:
                 try:
                     dt = self.netbox.dcim.device_types.create(device_type)
+                    self.device_types.existing_device_types[
+                        self.device_types.get_device_type_key(
+                            dt.manufacturer.slug,
+                            dt.model,
+                        )
+                    ] = dt
                     self.counter.update({'added': 1})
                     self.handle.verbose_log(f'Device Type Created: {dt.manufacturer.name} - '
                         + f'{dt.model} - {dt.id}')
@@ -156,6 +168,7 @@ class NetBox:
 
 
         for curr_mt in module_types:
+            src_file = curr_mt.pop("src", None)
             try:
                 module_type_res = all_module_types[curr_mt['manufacturer']['slug']][curr_mt["model"]]
                 self.handle.verbose_log(f'Module Type Exists: {module_type_res.manufacturer.name} - '
@@ -163,12 +176,19 @@ class NetBox:
             except KeyError:
                 try:
                     module_type_res = self.netbox.dcim.module_types.create(curr_mt)
+                    all_module_types.setdefault(module_type_res.manufacturer.slug, {})[module_type_res.model] = module_type_res
                     self.counter.update({'module_added': 1})
                     self.handle.verbose_log(f'Module Type Created: {module_type_res.manufacturer.name} - '
                         + f'{module_type_res.model} - {module_type_res.id}')
                 except pynetbox.RequestError as exce:
                     self.handle.log(f"Error '{exce.error}' creating module type: " +
                         f"{curr_mt}")
+                    if src_file:
+                        curr_mt["src"] = src_file
+                    continue
+
+            if src_file:
+                curr_mt["src"] = src_file
 
             if "interfaces" in curr_mt:
                 self.device_types.create_module_interfaces(curr_mt["interfaces"], module_type_res.id)
@@ -197,8 +217,15 @@ class DeviceTypes:
         self.ignore_ssl = ignore_ssl
         self.new_filters = new_filters
 
+    @staticmethod
+    def get_device_type_key(manufacturer_slug, model):
+        return f'{manufacturer_slug.casefold()}::{model.casefold()}'
+
     def get_device_types(self):
-        return {str(item): item for item in self.netbox.dcim.device_types.all()}
+        return {
+            self.get_device_type_key(item.manufacturer.slug, item.model): item
+            for item in self.netbox.dcim.device_types.all()
+        }
 
     def get_power_ports(self, device_type):
         return {str(item): item for item in self.netbox.dcim.power_port_templates.filter(**{'device_type_id' if self.new_filters else 'devicetype_id': device_type})}
@@ -484,9 +511,17 @@ class DeviceTypes:
         '''
         url = f"{baseurl}/api/dcim/device-types/{device_type}/"
         headers = { "Authorization": f"Token {token}" }
+        with ExitStack() as exit_stack:
+            files = {
+                image_type: (os.path.basename(file_name), exit_stack.enter_context(open(file_name, "rb")))
+                for image_type, file_name in images.items()
+            }
+            response = requests.patch(url, headers=headers, files=files, verify=(not self.ignore_ssl))
 
-        files = { i: (os.path.basename(f), open(f,"rb") ) for i,f in images.items() }
-        response = requests.patch(url, headers=headers, files=files, verify=(not self.ignore_ssl))
-
-        self.handle.log( f'Images {images} updated at {url}: {response}' )
-        self.counter["images"] += len(images)
+        if response.ok:
+            self.handle.log(f'Images {images} updated at {url}: {response}')
+            self.counter["images"] += len(images)
+        else:
+            self.handle.log(
+                f'Failed to update images {images} at {url}: '
+                f'{response.status_code} {response.text}')
