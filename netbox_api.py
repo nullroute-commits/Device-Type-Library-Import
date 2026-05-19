@@ -50,8 +50,7 @@ class NetBox:
     def verify_compatibility(self):
         # nb.version should be the version in the form '3.2'
         version_split = [int(x) for x in self.netbox.version.split('.')]
-        version_major = version_split[0] if version_split else 0
-        version_minor = version_split[1] if len(version_split) > 1 else 0
+        version_major, version_minor = (version_split + [0, 0])[:2]
 
         # Later than 3.2
         # Might want to check for the module-types entry as well?

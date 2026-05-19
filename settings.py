@@ -10,12 +10,12 @@ load_dotenv()
 
 REPO_URL = os.getenv(
     "REPO_URL",
-    default="https://github.com/netbox-community/devicetype-library.git",
+    "https://github.com/netbox-community/devicetype-library.git",
 )
-REPO_BRANCH = os.getenv("REPO_BRANCH", default="master")
+REPO_BRANCH = os.getenv("REPO_BRANCH", "master")
 NETBOX_URL = os.getenv("NETBOX_URL")
 NETBOX_TOKEN = os.getenv("NETBOX_TOKEN")
-IGNORE_SSL_ERRORS = os.getenv("IGNORE_SSL_ERRORS", default="False") == "True"
+IGNORE_SSL_ERRORS = os.getenv("IGNORE_SSL_ERRORS", "False") == "True"
 REPO_PATH = f"{os.path.dirname(os.path.realpath(__file__))}/repo"
 
 # optionally load vendors through a comma separated list as env var
