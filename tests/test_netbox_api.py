@@ -5,7 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from netbox_api import DeviceTypes, NetBox
+from netbox_api import DeviceTypes, ImportFilters, NetBox
 
 
 class FakeHandle:
@@ -19,15 +19,27 @@ class FakeHandle:
     def verbose_log(self, message):
         self.verbose_logs.append(str(message))
 
+    def log_device_ports_created(self, created_ports=None, port_type="port"):
+        return len(created_ports or [])
+
+    def log_module_ports_created(self, created_ports=None, port_type="port"):
+        return len(created_ports or [])
+
 
 class FakeEndpoint:
-    def __init__(self, records=None, create_result=None):
+    def __init__(self, records=None, create_result=None, filter_records=None):
         self.records = records or []
         self.create_calls = []
         self.create_result = create_result
+        self.filter_calls = []
+        self.filter_records = filter_records or []
 
     def all(self):
         return list(self.records)
+
+    def filter(self, **kwargs):
+        self.filter_calls.append(kwargs)
+        return list(self.filter_records)
 
     def create(self, payload):
         self.create_calls.append(payload)
@@ -63,6 +75,7 @@ class NetBoxBehaviorTests(unittest.TestCase):
         netbox.modules = False
         netbox.url = "https://netbox.example"
         netbox.token = "token"
+        netbox.import_filters = ImportFilters(handle)
         netbox.device_types = SimpleNamespace(
             existing_device_types={
                 DeviceTypes.get_device_type_key("vendor-a", "SharedModel"): SimpleNamespace(
@@ -87,6 +100,34 @@ class NetBoxBehaviorTests(unittest.TestCase):
         self.assertEqual(len(endpoint.create_calls), 1)
         self.assertEqual(endpoint.create_calls[0]["manufacturer"]["slug"], "vendor-b")
         self.assertEqual(netbox.counter["added"], 1)
+
+    def test_create_device_types_skips_excluded_device_type_objects(self):
+        handle = FakeHandle()
+        endpoint = FakeEndpoint()
+        netbox = NetBox.__new__(NetBox)
+        netbox.handle = handle
+        netbox.counter = Counter()
+        netbox.modules = False
+        netbox.url = "https://netbox.example"
+        netbox.token = "token"
+        netbox.import_filters = ImportFilters(handle, excluded_objects=["device-types:shared-model"])
+        netbox.device_types = SimpleNamespace(
+            existing_device_types={},
+            get_device_type_key=DeviceTypes.get_device_type_key,
+        )
+        netbox.netbox = SimpleNamespace(dcim=SimpleNamespace(device_types=endpoint))
+
+        payload = {
+            "manufacturer": {"name": "Vendor B", "slug": "vendor-b"},
+            "model": "SharedModel",
+            "slug": "shared-model",
+            "src": "/tmp/device.yml",
+        }
+
+        netbox.create_device_types([payload])
+
+        self.assertEqual(endpoint.create_calls, [])
+        self.assertEqual(netbox.counter["added"], 0)
 
     def test_upload_images_counts_only_successful_requests(self):
         handle = FakeHandle()
@@ -131,6 +172,44 @@ class NetBoxBehaviorTests(unittest.TestCase):
 
         self.assertEqual(device_types.counter["images"], 0)
         self.assertTrue(any("Failed to update images" in message for message in handle.logs))
+
+    def test_create_interfaces_skips_excluded_object_types(self):
+        handle = FakeHandle()
+        endpoint = FakeEndpoint(create_result=[])
+        device_types = DeviceTypes.__new__(DeviceTypes)
+        device_types.handle = handle
+        device_types.counter = Counter()
+        device_types.ignore_ssl = False
+        device_types.new_filters = False
+        device_types.import_filters = ImportFilters(handle, excluded_object_types=["interfaces"])
+        device_types.netbox = SimpleNamespace(dcim=SimpleNamespace(interface_templates=endpoint))
+
+        device_types.create_interfaces([{"name": "mgmt0", "type": "1000base-t"}], 1)
+
+        self.assertEqual(endpoint.filter_calls, [])
+        self.assertEqual(endpoint.create_calls, [])
+
+    def test_create_interfaces_skips_scoped_excluded_objects(self):
+        handle = FakeHandle()
+        endpoint = FakeEndpoint(create_result=[], filter_records=[])
+        device_types = DeviceTypes.__new__(DeviceTypes)
+        device_types.handle = handle
+        device_types.counter = Counter()
+        device_types.ignore_ssl = False
+        device_types.new_filters = False
+        device_types.import_filters = ImportFilters(handle, excluded_objects=["interfaces:mgmt0"])
+        device_types.netbox = SimpleNamespace(dcim=SimpleNamespace(interface_templates=endpoint))
+
+        device_types.create_interfaces(
+            [
+                {"name": "mgmt0", "type": "1000base-t"},
+                {"name": "xe-0/0/0", "type": "10gbase-x-sfpp"},
+            ],
+            1,
+        )
+
+        self.assertEqual(len(endpoint.create_calls), 1)
+        self.assertEqual([item["name"] for item in endpoint.create_calls[0]], ["xe-0/0/0"])
 
 
 if __name__ == "__main__":

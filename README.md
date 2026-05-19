@@ -50,7 +50,7 @@ Next, it will loop over every manufacturer and every device of every manufacture
 
 ### 🧰 Arguments
 
-This script currently accepts a list of vendors as an argument, so that you can selectively import devices.
+This script supports vendor, slug, and exclusion filters so that you can selectively control what gets imported or updated.
 
 To import only device by APC, for example:
 
@@ -62,6 +62,18 @@ To import only device by APC, for example:
 
 ```
 ./nb-dt-import.py --vendors apc,juniper
+```
+
+`--exclude-object-types` skips entire template categories or top-level imports, such as `device-types`, `module-types`, `interfaces`, `power-ports`, or `images`.
+
+```
+./nb-dt-import.py --exclude-object-types interfaces,module-types
+```
+
+`--exclude-objects` skips specific objects by exact name, slug, or model. Prefix an entry with an object type such as `interfaces:mgmt0` or `device-types:ex4300` when you only want that match ignored within one category.
+
+```
+./nb-dt-import.py --exclude-objects device-types:ex4300,interfaces:mgmt0
 ```
 
 ## Docker build
@@ -87,6 +99,9 @@ The container supports the following env var as configuration :
 - `NETBOX_URL`, used to access netbox
 - `NETBOX_TOKEN`, token for accessing netbox
 - `VENDORS`, a comma-separated list of vendors to import (defaults to None)
+- `SLUGS`, a space- or comma-separated list of device type slugs to import
+- `EXCLUDE_OBJECT_TYPES`, a space- or comma-separated list of object types to skip
+- `EXCLUDE_OBJECTS`, a space- or comma-separated list of specific objects to skip; supports scoped entries like `interfaces:mgmt0`
 - `REQUESTS_CA_BUNDLE`, path to a CA_BUNDLE for validation if you are using self-signed certificates(file must be included in the container)
 
 To run :

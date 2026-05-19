@@ -48,6 +48,25 @@ class SettingsTests(unittest.TestCase):
         exception_handler.exception.assert_called_once()
         self.assertEqual(exception_handler.exception.call_args[0][1], "NETBOX_TOKEN")
 
+    def test_exclusion_filters_accept_env_values(self):
+        settings = self.load_settings(
+            {
+                "NETBOX_URL": "https://netbox.example",
+                "NETBOX_TOKEN": "token",
+                "EXCLUDE_OBJECT_TYPES": "interfaces,module-types images",
+                "EXCLUDE_OBJECTS": "device-types:EX4300 mgmt0,module-types:line-card",
+            }
+        )
+
+        self.assertEqual(
+            settings.args.exclude_object_types,
+            ["interfaces", "module-types", "images"],
+        )
+        self.assertEqual(
+            settings.args.exclude_objects,
+            ["device-types:EX4300", "mgmt0", "module-types:line-card"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
