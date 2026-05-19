@@ -1,16 +1,21 @@
 from argparse import ArgumentParser
 import os
+
+from dotenv import load_dotenv
+
 from log_handler import LogHandler
 from repo import DTLRepo
-from dotenv import load_dotenv
+
 load_dotenv()
 
-REPO_URL = os.getenv("REPO_URL",
-                     default="https://github.com/netbox-community/devicetype-library.git")
-REPO_BRANCH = os.getenv("REPO_BRANCH", default="master")
+REPO_URL = os.getenv(
+    "REPO_URL",
+    "https://github.com/netbox-community/devicetype-library.git",
+)
+REPO_BRANCH = os.getenv("REPO_BRANCH", "master")
 NETBOX_URL = os.getenv("NETBOX_URL")
 NETBOX_TOKEN = os.getenv("NETBOX_TOKEN")
-IGNORE_SSL_ERRORS = (os.getenv("IGNORE_SSL_ERRORS", default="False") == "True")
+IGNORE_SSL_ERRORS = os.getenv("IGNORE_SSL_ERRORS", "False") == "True"
 REPO_PATH = f"{os.path.dirname(os.path.realpath(__file__))}/repo"
 
 # optionally load vendors through a comma separated list as env var
@@ -18,10 +23,6 @@ VENDORS = list(filter(None, os.getenv("VENDORS", "").split(",")))
 
 # optionally load device types through a space separated list as env var
 SLUGS = os.getenv("SLUGS", "").split()
-
-NETBOX_FEATURES = {
-    'modules': False,
-}
 
 parser = ArgumentParser(description='Import Netbox Device Types')
 parser.add_argument('--vendors', nargs='+', default=VENDORS,
@@ -37,16 +38,37 @@ parser.add_argument('--verbose', action='store_true', default=False,
 
 args = parser.parse_args()
 
-args.vendors = [v.casefold()
-                for vendor in args.vendors for v in vendor.split(",") if v.strip()]
-args.slugs = [s for slug in args.slugs for s in slug.split(",") if s.strip()]
+args.vendors = [
+    value.casefold()
+    for vendor in args.vendors
+    for value in vendor.split(",")
+    if value.strip()
+]
+args.slugs = [
+    value
+    for slug in args.slugs
+    for value in slug.split(",")
+    if value.strip()
+]
 
 handle = LogHandler(args)
-# Evaluate environment variables and exit if one of the mandatory ones are not set
-MANDATORY_ENV_VARS = ["REPO_URL", "NETBOX_URL", "NETBOX_TOKEN"]
-for var in MANDATORY_ENV_VARS:
-    if var not in os.environ:
-        handle.exception("EnvironmentError", var,
-                         f'Environment variable "{var}" is not set.\n\nMANDATORY_ENV_VARS: {str(MANDATORY_ENV_VARS)}.\n\nCURRENT_ENV_VARS: {str(os.environ)}')
+MANDATORY_ENV_VARS = {
+    "NETBOX_URL": NETBOX_URL,
+    "NETBOX_TOKEN": NETBOX_TOKEN,
+}
 
-dtl_repo = DTLRepo(args, REPO_PATH, handle)
+
+def validate_environment(exception_handler=None):
+    exception_handler = exception_handler or handle
+    for var_name, value in MANDATORY_ENV_VARS.items():
+        if not value:
+            exception_handler.exception(
+                "EnvironmentError",
+                var_name,
+                f'Environment variable "{var_name}" is not set.',
+            )
+
+
+def create_repo(exception_handler=None, cli_args=None, repo_path=None):
+    exception_handler = exception_handler or handle
+    return DTLRepo(cli_args or args, repo_path or REPO_PATH, exception_handler)

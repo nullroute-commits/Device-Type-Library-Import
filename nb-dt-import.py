@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-from collections import Counter
 from datetime import datetime
-import yaml
-import pynetbox
-from glob import glob
-import os
 
 import settings
 from netbox_api import NetBox
@@ -13,23 +8,23 @@ from netbox_api import NetBox
 def main():
     startTime = datetime.now()
     args = settings.args
+    settings.validate_environment()
+    dtl_repo = settings.create_repo()
 
     netbox = NetBox(settings)
-    files, vendors = settings.dtl_repo.get_devices(
-        f'{settings.dtl_repo.repo_path}/device-types/', args.vendors)
+    files, vendors = dtl_repo.get_devices(dtl_repo.get_devices_path(), args.vendors)
 
     settings.handle.log(f'{len(vendors)} Vendors Found')
-    device_types = settings.dtl_repo.parse_files(files, slugs=args.slugs)
+    device_types = dtl_repo.parse_files(files, slugs=args.slugs)
     settings.handle.log(f'{len(device_types)} Device-Types Found')
     netbox.create_manufacturers(vendors)
     netbox.create_device_types(device_types)
 
     if netbox.modules:
         settings.handle.log("Modules Enabled. Creating Modules...")
-        files, vendors = settings.dtl_repo.get_devices(
-            f'{settings.dtl_repo.repo_path}/module-types/', args.vendors)
+        files, vendors = dtl_repo.get_devices(dtl_repo.get_modules_path(), args.vendors)
         settings.handle.log(f'{len(vendors)} Module Vendors Found')
-        module_types = settings.dtl_repo.parse_files(files, slugs=args.slugs)
+        module_types = dtl_repo.parse_files(files, slugs=args.slugs)
         settings.handle.log(f'{len(module_types)} Module-Types Found')
         netbox.create_manufacturers(vendors)
         netbox.create_module_types(module_types)
@@ -43,7 +38,7 @@ def main():
         f'{netbox.counter["updated"]} interfaces/ports updated')
     settings.handle.log(
         f'{netbox.counter["manufacturer"]} manufacturers created')
-    if settings.NETBOX_FEATURES['modules']:
+    if netbox.modules:
         settings.handle.log(
             f'{netbox.counter["module_added"]} modules created')
         settings.handle.log(

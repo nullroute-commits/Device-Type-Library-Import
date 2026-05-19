@@ -25,7 +25,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-3. There are two variables that are required when using this script to import device types into your Netbox installation. (1) Your Netbox instance URL and (2) a token with **write rights**.
+3. There are two variables that are required when using this script to import device types into your NetBox installation: (1) your NetBox instance URL and (2) a token with **write rights**. `REPO_URL` is optional and defaults to the public NetBox device-type library.
 
 Copy the existing `.env.example` to your own `.env` file, and fill in the variables.
 
@@ -44,7 +44,7 @@ To use the script, simply execute the script as follows. Make sure you're still 
 ./nb-dt-import.py
 ```
 
-This will clone the latest master branch from the `netbox-community/devicetype-library` from Github and install it into the `repo` subdirectory. If this directory already exists, it will perform a `git pull` to update the repository instead.
+This validates the required NetBox environment variables, clones the selected branch from `netbox-community/devicetype-library` into the `repo` subdirectory, and updates that checkout on later runs.
 
 Next, it will loop over every manufacturer and every device of every manufacturer and begin checking if your Netbox install already has them, and if not, creates them. It will skip preexisting manufacturers, devices, interfaces, etc. so as to not end up with duplicate entries in your Netbox instance.
 
@@ -93,6 +93,18 @@ To run :
 
 ```
 docker run -e "NETBOX_URL=http://netbox:8080/" -e "NETBOX_TOKEN=98765434567890" ghcr.io/minitriga/netbox-device-type-library-import
+```
+
+## 🤖 Agent Source of Truth
+
+This repository now includes `/agent.md` as its local AI-agent source of truth, adapted from the upstream [`nullroute-commits/agency-agents`](https://github.com/nullroute-commits/agency-agents) project. Use it as the canonical maintenance brief for repository-aware agents.
+
+## ✅ Validation
+
+Run the focused regression suite with:
+
+```
+python -m unittest discover -s tests
 ```
 
 ## 🧑‍💻 Contributing
